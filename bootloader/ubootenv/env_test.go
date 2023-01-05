@@ -47,7 +47,7 @@ func (u *uenvTestSuite) SetUpTest(c *C) {
 }
 
 func (u *uenvTestSuite) TestSetNoDuplicate(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
 	c.Assert(err, IsNil)
 	env.Set("foo", "bar")
 	env.Set("foo", "bar")
@@ -55,7 +55,20 @@ func (u *uenvTestSuite) TestSetNoDuplicate(c *C) {
 }
 
 func (u *uenvTestSuite) TestOpenEnv(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
+	c.Assert(err, IsNil)
+	env.Set("foo", "bar")
+	c.Assert(env.String(), Equals, "foo=bar\n")
+	err = env.Save()
+	c.Assert(err, IsNil)
+
+	env2, err := ubootenv.Open(u.envFile)
+	c.Assert(err, IsNil)
+	c.Assert(env2.String(), Equals, "foo=bar\n")
+}
+
+func (u *uenvTestSuite) TestOpenEnvNoHeaderFlagByte(c *C) {
+	env, err := ubootenv.Create(u.envFile, 4096, false)
 	c.Assert(err, IsNil)
 	env.Set("foo", "bar")
 	c.Assert(env.String(), Equals, "foo=bar\n")
@@ -74,7 +87,7 @@ func (u *uenvTestSuite) TestOpenEnvBadEmpty(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = ubootenv.Open(empty)
-	c.Assert(err, ErrorMatches, `cannot open ".*": smaller than expected header`)
+	c.Assert(err, ErrorMatches, `cannot open ".*": smaller than expected environment block`)
 }
 
 func (u *uenvTestSuite) TestOpenEnvBadCRC(c *C) {
@@ -89,20 +102,20 @@ func (u *uenvTestSuite) TestOpenEnvBadCRC(c *C) {
 }
 
 func (u *uenvTestSuite) TestGetSimple(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
 	c.Assert(err, IsNil)
 	env.Set("foo", "bar")
 	c.Assert(env.Get("foo"), Equals, "bar")
 }
 
 func (u *uenvTestSuite) TestGetNoSuchEntry(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
 	c.Assert(err, IsNil)
 	c.Assert(env.Get("no-such-entry"), Equals, "")
 }
 
 func (u *uenvTestSuite) TestImport(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
 	c.Assert(err, IsNil)
 
 	r := strings.NewReader("foo=bar\n#comment\n\nbaz=baz")
@@ -113,7 +126,7 @@ func (u *uenvTestSuite) TestImport(c *C) {
 }
 
 func (u *uenvTestSuite) TestImportHasError(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
 	c.Assert(err, IsNil)
 
 	r := strings.NewReader("foxy")
@@ -122,7 +135,7 @@ func (u *uenvTestSuite) TestImportHasError(c *C) {
 }
 
 func (u *uenvTestSuite) TestSetEmptyUnsets(c *C) {
-	env, err := ubootenv.Create(u.envFile, 4096)
+	env, err := ubootenv.Create(u.envFile, 4096, true)
 	c.Assert(err, IsNil)
 
 	env.Set("foo", "bar")
@@ -176,7 +189,7 @@ func (u *uenvTestSuite) TestErrorOnMalformedData(c *C) {
 	u.makeUbootEnvFromData(c, mockData)
 
 	env, err := ubootenv.Open(u.envFile)
-	c.Assert(err, ErrorMatches, `cannot parse line "foo" as key=value pair`)
+	c.Assert(err, ErrorMatches, `cannot open ".*": cannot parse line "foo" as key=value pair`)
 	c.Assert(env, IsNil)
 }
 
@@ -224,7 +237,7 @@ func (u *uenvTestSuite) TestErrorOnMissingKeyInKeyValuePair(c *C) {
 	u.makeUbootEnvFromData(c, mockData)
 
 	env, err := ubootenv.Open(u.envFile)
-	c.Assert(err, ErrorMatches, `cannot parse line "=foo" as key=value pair`)
+	c.Assert(err, ErrorMatches, `cannot open ".*": cannot parse line "=foo" as key=value pair`)
 	c.Assert(env, IsNil)
 }
 
@@ -243,7 +256,7 @@ func (u *uenvTestSuite) TestReadEmptyFile(c *C) {
 }
 
 func (u *uenvTestSuite) TestWritesEmptyFileWithDoubleNewline(c *C) {
-	env, err := ubootenv.Create(u.envFile, 12)
+	env, err := ubootenv.Create(u.envFile, 12, true)
 	c.Assert(err, IsNil)
 	err = env.Save()
 	c.Assert(err, IsNil)
@@ -269,10 +282,35 @@ func (u *uenvTestSuite) TestWritesEmptyFileWithDoubleNewline(c *C) {
 	c.Assert(env.String(), Equals, "")
 }
 
+func (u *uenvTestSuite) TestWritesEmptyFileWithDoubleNewlineNoHeaderFlagByte(c *C) {
+	env, err := ubootenv.Create(u.envFile, 11, false)
+	c.Assert(err, IsNil)
+	err = env.Save()
+	c.Assert(err, IsNil)
+
+	r, err := os.Open(u.envFile)
+	c.Assert(err, IsNil)
+	defer r.Close()
+	content, err := ioutil.ReadAll(r)
+	c.Assert(err, IsNil)
+	c.Assert(content, DeepEquals, []byte{
+		// crc
+		0x11, 0x38, 0xb3, 0x89,
+		// eof
+		0x0, 0x0,
+		// footer
+		0xff, 0xff, 0xff, 0xff, 0xff,
+	})
+
+	env, err = ubootenv.Open(u.envFile)
+	c.Assert(err, IsNil)
+	c.Assert(env.String(), Equals, "")
+}
+
 func (u *uenvTestSuite) TestWritesContentCorrectly(c *C) {
 	totalSize := 16
 
-	env, err := ubootenv.Create(u.envFile, totalSize)
+	env, err := ubootenv.Create(u.envFile, totalSize, true)
 	c.Assert(err, IsNil)
 	env.Set("a", "b")
 	env.Set("c", "d")
@@ -289,6 +327,42 @@ func (u *uenvTestSuite) TestWritesContentCorrectly(c *C) {
 		0xc7, 0xd9, 0x6b, 0xc5,
 		// redundant
 		0x0,
+		// a=b
+		0x61, 0x3d, 0x62,
+		// eol
+		0x0,
+		// c=d
+		0x63, 0x3d, 0x64,
+		// eof
+		0x0, 0x0,
+		// footer
+		0xff, 0xff,
+	})
+
+	env, err = ubootenv.Open(u.envFile)
+	c.Assert(err, IsNil)
+	c.Assert(env.String(), Equals, "a=b\nc=d\n")
+	c.Assert(env.Size(), Equals, totalSize)
+}
+
+func (u *uenvTestSuite) TestWritesContentCorrectlyNoHeaderFlagByte(c *C) {
+	totalSize := 15
+
+	env, err := ubootenv.Create(u.envFile, totalSize, false)
+	c.Assert(err, IsNil)
+	env.Set("a", "b")
+	env.Set("c", "d")
+	err = env.Save()
+	c.Assert(err, IsNil)
+
+	r, err := os.Open(u.envFile)
+	c.Assert(err, IsNil)
+	defer r.Close()
+	content, err := ioutil.ReadAll(r)
+	c.Assert(err, IsNil)
+	c.Assert(content, DeepEquals, []byte{
+		// crc
+		0xc7, 0xd9, 0x6b, 0xc5,
 		// a=b
 		0x61, 0x3d, 0x62,
 		// eol

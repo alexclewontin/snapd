@@ -23,6 +23,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -33,15 +34,12 @@ import (
 	"strings"
 )
 
-// FIXME: add config option for that so that the user can select if
-//        he/she wants env with or without flags
-var headerSize = 5
-
 // Env contains the data of the uboot environment
 type Env struct {
-	fname string
-	size  int
-	data  map[string]string
+	fname          string
+	size           int
+	headerFlagByte bool
+	data           map[string]string
 }
 
 // little endian helpers
@@ -59,7 +57,7 @@ func writeUint32(u uint32) []byte {
 }
 
 // Create a new empty uboot env file with the given size
-func Create(fname string, size int) (*Env, error) {
+func Create(fname string, size int, headerFlagByte bool) (*Env, error) {
 	f, err := os.Create(fname)
 	if err != nil {
 		return nil, err
@@ -67,9 +65,10 @@ func Create(fname string, size int) (*Env, error) {
 	defer f.Close()
 
 	env := &Env{
-		fname: fname,
-		size:  size,
-		data:  make(map[string]string),
+		fname:          fname,
+		size:           size,
+		headerFlagByte: headerFlagByte,
+		data:           make(map[string]string),
 	}
 
 	return env, nil
@@ -101,8 +100,43 @@ func OpenWithFlags(fname string, flags OpenFlags) (*Env, error) {
 		return nil, err
 	}
 
-	if len(contentWithHeader) < headerSize {
-		return nil, fmt.Errorf("cannot open %q: smaller than expected header", fname)
+	// Most systems have SYS_REDUNDAND_ENVIRONMENT=y, so try that first
+	env, err := readEnv(contentWithHeader, flags, true)
+	// if there is a bad CRC, maybe we just assumed the wrong header size
+	if errors.Is(err, errBadCrc) {
+		env, err = readEnv(contentWithHeader, flags, false)
+	}
+	// if error was not one of the ones that might indicate we assumed the wrong
+	// header size, or there is still an error after checking both header sizes
+	// something is actually wrong
+	if err != nil {
+		return nil, fmt.Errorf("cannot open %q: %w", fname, err)
+	}
+
+	env.fname = fname
+	return env, nil
+}
+
+var (
+	errBadCrc = errors.New("bad CRC")
+)
+
+func readEnv(contentWithHeader []byte, flags OpenFlags, headerFlagByte bool) (*Env, error) {
+
+	// The minimum valid env is 6 bytes (4 byte CRC + 2 null bytes for EOF)
+	// The maximum header length is 5 bytes (4 byte CRC, + )
+	// If we always make sure our env is 6 bytes long, we'll never run into
+	// trouble doing some sort of OOB slicing below, but also we will
+	// accept all legal envs
+	if len(contentWithHeader) < 6 {
+		return nil, errors.New("smaller than expected environment block")
+	}
+
+	// The minimum header is 4 bytes of CRC
+	headerSize := 4
+	if headerFlagByte {
+		// Some uboots understand there to be a 5th byte, containing flags
+		headerSize++
 	}
 
 	crc := readUint32(contentWithHeader)
@@ -110,7 +144,7 @@ func OpenWithFlags(fname string, flags OpenFlags) (*Env, error) {
 	payload := contentWithHeader[headerSize:]
 	actualCRC := crc32.ChecksumIEEE(payload)
 	if crc != actualCRC {
-		return nil, fmt.Errorf("cannot open %q: bad CRC %v != %v", fname, crc, actualCRC)
+		return nil, fmt.Errorf("%w %v != %v", errBadCrc, crc, actualCRC)
 	}
 
 	if eof := bytes.Index(payload, []byte{0, 0}); eof >= 0 {
@@ -123,9 +157,9 @@ func OpenWithFlags(fname string, flags OpenFlags) (*Env, error) {
 	}
 
 	env := &Env{
-		fname: fname,
-		size:  len(contentWithHeader),
-		data:  data,
+		size:           len(contentWithHeader),
+		headerFlagByte: headerFlagByte,
+		data:           data,
 	}
 
 	return env, nil
@@ -167,6 +201,10 @@ func (env *Env) Size() int {
 	return env.size
 }
 
+func (env *Env) HeaderFlagByte() bool {
+	return env.headerFlagByte
+}
+
 // Get the value of the environment variable
 func (env *Env) Get(name string) string {
 	return env.data[name]
@@ -205,6 +243,13 @@ func (env *Env) iterEnv(f func(key, value string)) {
 
 // Save will write out the environment data
 func (env *Env) Save() error {
+	// The minimum header is 4 bytes of CRC
+	headerSize := 4
+	if env.headerFlagByte {
+		// Some uboots understand there to be a 5th byte, containing flags
+		headerSize++
+	}
+
 	w := bytes.NewBuffer(nil)
 	// will panic if the buffer can't grow, all writes to
 	// the buffer will be ok because we sized it correctly
