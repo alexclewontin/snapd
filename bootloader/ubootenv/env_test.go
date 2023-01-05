@@ -269,6 +269,31 @@ func (u *uenvTestSuite) TestWritesEmptyFileWithDoubleNewline(c *C) {
 	c.Assert(env.String(), Equals, "")
 }
 
+func (u *uenvTestSuite) TestWritesEmptyFileWithDoubleNewlineNoRedund(c *C) {
+	env, err := ubootenv.CreateWithFlags(u.envFile, 11, ubootenv.OpenNoRedundEnv)
+	c.Assert(err, IsNil)
+	err = env.Save()
+	c.Assert(err, IsNil)
+
+	r, err := os.Open(u.envFile)
+	c.Assert(err, IsNil)
+	defer r.Close()
+	content, err := ioutil.ReadAll(r)
+	c.Assert(err, IsNil)
+	c.Assert(content, DeepEquals, []byte{
+		// crc
+		0x11, 0x38, 0xb3, 0x89,
+		// eof
+		0x0, 0x0,
+		// footer
+		0xff, 0xff, 0xff, 0xff, 0xff,
+	})
+
+	env, err = ubootenv.OpenWithFlags(u.envFile, ubootenv.OpenNoRedundEnv)
+	c.Assert(err, IsNil)
+	c.Assert(env.String(), Equals, "")
+}
+
 func (u *uenvTestSuite) TestWritesContentCorrectly(c *C) {
 	totalSize := 16
 
@@ -302,6 +327,42 @@ func (u *uenvTestSuite) TestWritesContentCorrectly(c *C) {
 	})
 
 	env, err = ubootenv.Open(u.envFile)
+	c.Assert(err, IsNil)
+	c.Assert(env.String(), Equals, "a=b\nc=d\n")
+	c.Assert(env.Size(), Equals, totalSize)
+}
+
+func (u *uenvTestSuite) TestWritesContentCorrectlyNoRedundEnv(c *C) {
+	totalSize := 15
+
+	env, err := ubootenv.CreateWithFlags(u.envFile, totalSize, ubootenv.OpenNoRedundEnv)
+	c.Assert(err, IsNil)
+	env.Set("a", "b")
+	env.Set("c", "d")
+	err = env.Save()
+	c.Assert(err, IsNil)
+
+	r, err := os.Open(u.envFile)
+	c.Assert(err, IsNil)
+	defer r.Close()
+	content, err := ioutil.ReadAll(r)
+	c.Assert(err, IsNil)
+	c.Assert(content, DeepEquals, []byte{
+		// crc
+		0xc7, 0xd9, 0x6b, 0xc5,
+		// a=b
+		0x61, 0x3d, 0x62,
+		// eol
+		0x0,
+		// c=d
+		0x63, 0x3d, 0x64,
+		// eof
+		0x0, 0x0,
+		// footer
+		0xff, 0xff,
+	})
+
+	env, err = ubootenv.OpenWithFlags(u.envFile, ubootenv.OpenNoRedundEnv)
 	c.Assert(err, IsNil)
 	c.Assert(env.String(), Equals, "a=b\nc=d\n")
 	c.Assert(env.Size(), Equals, totalSize)

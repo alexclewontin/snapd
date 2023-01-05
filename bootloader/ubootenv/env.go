@@ -33,15 +33,12 @@ import (
 	"strings"
 )
 
-// FIXME: add config option for that so that the user can select if
-//        he/she wants env with or without flags
-var headerSize = 5
-
 // Env contains the data of the uboot environment
 type Env struct {
-	fname string
-	size  int
-	data  map[string]string
+	fname      string
+	size       int
+	headerSize int
+	data       map[string]string
 }
 
 // little endian helpers
@@ -58,8 +55,31 @@ func writeUint32(u uint32) []byte {
 	return buf.Bytes()
 }
 
+// OpenFlags instructs Open and Create how to alter their behavior.
+type OpenFlags int
+
+const (
+	// OpenBestEffort instructs OpenWithFlags to skip malformed data without returning an error.
+	// Ignored by Create
+	OpenBestEffort OpenFlags = 1 << iota
+	// OpenRedundEnv instructs Open and Create to use the u-boot env header format assuming
+	// SYS_REDUNDAND_ENVIRONMENT=n. Historically, Ubuntu Core has defaulted to assuming y.
+	OpenNoRedundEnv
+)
+
+func getHeaderSize(flags OpenFlags) int {
+	if flags&OpenNoRedundEnv == OpenNoRedundEnv {
+		return 4
+	}
+	return 5
+}
+
 // Create a new empty uboot env file with the given size
 func Create(fname string, size int) (*Env, error) {
+	return CreateWithFlags(fname, size, OpenFlags(0))
+}
+
+func CreateWithFlags(fname string, size int, flags OpenFlags) (*Env, error) {
 	f, err := os.Create(fname)
 	if err != nil {
 		return nil, err
@@ -67,21 +87,14 @@ func Create(fname string, size int) (*Env, error) {
 	defer f.Close()
 
 	env := &Env{
-		fname: fname,
-		size:  size,
-		data:  make(map[string]string),
+		fname:      fname,
+		size:       size,
+		headerSize: getHeaderSize(flags),
+		data:       make(map[string]string),
 	}
 
 	return env, nil
 }
-
-// OpenFlags instructs open how to alter its behavior.
-type OpenFlags int
-
-const (
-	// OpenBestEffort instructs OpenWithFlags to skip malformed data without returning an error.
-	OpenBestEffort OpenFlags = 1 << iota
-)
 
 // Open opens a existing uboot env file
 func Open(fname string) (*Env, error) {
@@ -100,6 +113,8 @@ func OpenWithFlags(fname string, flags OpenFlags) (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	headerSize := getHeaderSize(flags)
 
 	if len(contentWithHeader) < headerSize {
 		return nil, fmt.Errorf("cannot open %q: smaller than expected header", fname)
@@ -123,9 +138,10 @@ func OpenWithFlags(fname string, flags OpenFlags) (*Env, error) {
 	}
 
 	env := &Env{
-		fname: fname,
-		size:  len(contentWithHeader),
-		data:  data,
+		fname:      fname,
+		size:       len(contentWithHeader),
+		headerSize: headerSize,
+		data:       data,
 	}
 
 	return env, nil
@@ -208,7 +224,7 @@ func (env *Env) Save() error {
 	w := bytes.NewBuffer(nil)
 	// will panic if the buffer can't grow, all writes to
 	// the buffer will be ok because we sized it correctly
-	w.Grow(env.size - headerSize)
+	w.Grow(env.size - env.headerSize)
 
 	// write the payload
 	env.iterEnv(func(key, value string) {
@@ -226,7 +242,7 @@ func (env *Env) Save() error {
 
 	// write ff into the remaining parts
 	writtenSoFar := w.Len()
-	for i := 0; i < env.size-headerSize-writtenSoFar; i++ {
+	for i := 0; i < env.size-env.headerSize-writtenSoFar; i++ {
 		w.Write([]byte{0xff})
 	}
 
@@ -262,7 +278,7 @@ func (env *Env) Save() error {
 		return err
 	}
 	// padding bytes (e.g. for redundant header)
-	pad := make([]byte, headerSize-binary.Size(crc))
+	pad := make([]byte, env.headerSize-binary.Size(crc))
 	if _, err := f.Write(pad); err != nil {
 		return err
 	}
