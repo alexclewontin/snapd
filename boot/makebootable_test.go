@@ -1653,7 +1653,7 @@ func (s *makeBootable20UbootSuite) TestUbootMakeRunnableSystem20RunModeBootSel(c
 	mockSeedUbootBootSel := filepath.Join(boot.InitramfsUbuntuSeedDir, "uboot/ubuntu/boot.sel")
 	err = os.MkdirAll(filepath.Dir(mockSeedUbootBootSel), 0755)
 	c.Assert(err, IsNil)
-	env, err := ubootenv.Create(mockSeedUbootBootSel, 4096)
+	env, err := ubootenv.Create(mockSeedUbootBootSel, 4096, true)
 	c.Assert(err, IsNil)
 	c.Assert(env.Save(), IsNil)
 
@@ -1661,7 +1661,7 @@ func (s *makeBootable20UbootSuite) TestUbootMakeRunnableSystem20RunModeBootSel(c
 	mockBootUbootBootSel := filepath.Join(boot.InitramfsUbuntuBootDir, "uboot/ubuntu/boot.sel")
 	err = os.MkdirAll(filepath.Dir(mockBootUbootBootSel), 0755)
 	c.Assert(err, IsNil)
-	env, err = ubootenv.Create(mockBootUbootBootSel, 4096)
+	env, err = ubootenv.Create(mockBootUbootBootSel, 4096, true)
 	c.Assert(err, IsNil)
 	c.Assert(env.Save(), IsNil)
 
