@@ -50,19 +50,36 @@ func NewUboot(rootdir string, blOpts *Options) ExtractedRecoveryKernelImageBootl
 	return newUboot(rootdir, blOpts).(ExtractedRecoveryKernelImageBootloader)
 }
 
+func NewUbootNoRedundEnv(rootdir string, blOpts *Options) ExtractedRecoveryKernelImageBootloader {
+	return newUbootNoRedundEnv(rootdir, blOpts).(ExtractedRecoveryKernelImageBootloader)
+}
+
 func MockUbootFiles(c *C, rootdir string, blOpts *Options) {
-	u := &uboot{rootdir: rootdir}
+	u := newUboot(rootdir, blOpts).(*uboot)
+	err := os.MkdirAll(u.dir(), 0755)
+	c.Assert(err, IsNil)
+
+	// ensure that we have a valid uboot.env too
+	env, err := u.createEnv(u.envFile(), 4096)
+	c.Assert(err, IsNil)
+	err = env.Save()
+	c.Assert(err, IsNil)
+}
+
+func MockUbootNoRedundEnvFiles(c *C, rootdir string, blOpts *Options) {
+	u := newUbootNoRedundEnv(rootdir, blOpts).(*uboot)
 	u.setDefaults()
 	u.processBlOpts(blOpts)
 	err := os.MkdirAll(u.dir(), 0755)
 	c.Assert(err, IsNil)
 
 	// ensure that we have a valid uboot.env too
-	env, err := ubootenv.Create(u.envFile(), 4096)
+	env, err := u.createEnv(u.envFile(), 4096)
 	c.Assert(err, IsNil)
 	err = env.Save()
 	c.Assert(err, IsNil)
 }
+
 
 func NewGrub(rootdir string, opts *Options) RecoveryAwareBootloader {
 	return newGrub(rootdir, opts).(RecoveryAwareBootloader)

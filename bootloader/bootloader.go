@@ -312,6 +312,7 @@ var (
 	//  function.
 	bootloaders = []bootloaderNewFunc{
 		newUboot,
+		newUbootNoRedundEnv,
 		newGrub,
 		newAndroidBoot,
 		newLk,

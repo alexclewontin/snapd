@@ -1,7 +1,7 @@
 // -*- Mode: Go; indent-tabs-mode: t -*-
 
 /*
- * Copyright (C) 2014-2022 Canonical Ltd
+ * Copyright (C) 2014-2023 Canonical Ltd
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -33,42 +33,37 @@ import (
 var (
 	_ Bootloader                             = (*uboot)(nil)
 	_ ExtractedRecoveryKernelImageBootloader = (*uboot)(nil)
+	_ ubootCommon                            = (*ubootRedundEnv)(nil)
+	_ ubootCommon                            = (*ubootNoRedundEnv)(nil)
 )
 
 type uboot struct {
-	rootdir string
-	basedir string
-
-	ubootEnvFileName string
+	ubootCommon
 }
 
-func (u *uboot) setDefaults() {
-	u.basedir = "/boot/uboot/"
-	u.ubootEnvFileName = "uboot.env"
-}
-
-func (u *uboot) processBlOpts(blOpts *Options) {
-	if blOpts != nil {
-		switch {
-		case blOpts.Role == RoleRecovery || blOpts.NoSlashBoot:
-			// RoleRecovery or NoSlashBoot imply we use
-			// the "boot.sel" simple text format file in
-			// /uboot/ubuntu as it exists on the partition
-			// directly
-			u.basedir = "/uboot/ubuntu/"
-			fallthrough
-		case blOpts.Role == RoleRunMode:
-			// if RoleRunMode (and no NoSlashBoot), we
-			// expect to find /boot/uboot/boot.sel
-			u.ubootEnvFileName = "boot.sel"
-		}
-	}
-}
-
-// newUboot create a new Uboot bootloader object
+// newUboot creates a new Uboot bootloader object
 func newUboot(rootdir string, blOpts *Options) Bootloader {
 	u := &uboot{
-		rootdir: rootdir,
+		&ubootRedundEnv{
+			ubootBase{
+				rootdir: rootdir,
+			},
+		},
+	}
+	u.setDefaults()
+	u.processBlOpts(blOpts)
+
+	return u
+}
+
+// newUbootNoRedundEnv creates a new Uboot bootloader object
+func newUbootNoRedundEnv(rootdir string, blOpts *Options) Bootloader {
+	u := &uboot{
+		&ubootNoRedundEnv{
+			ubootBase{
+				rootdir: rootdir,
+			},
+		},
 	}
 	u.setDefaults()
 	u.processBlOpts(blOpts)
@@ -77,14 +72,7 @@ func newUboot(rootdir string, blOpts *Options) Bootloader {
 }
 
 func (u *uboot) Name() string {
-	return "uboot"
-}
-
-func (u *uboot) dir() string {
-	if u.rootdir == "" {
-		panic("internal error: unset rootdir")
-	}
-	return filepath.Join(u.rootdir, u.basedir)
+	return u.name()
 }
 
 func (u *uboot) InstallBootConfig(gadgetDir string, blOpts *Options) error {
@@ -112,7 +100,7 @@ func (u *uboot) InstallBootConfig(gadgetDir string, blOpts *Options) error {
 		}
 
 		// TODO:UC20: what's a reasonable size for this file?
-		env, err := ubootenv.Create(u.envFile(), 4096)
+		env, err := u.createEnv(u.envFile(), 4096)
 		if err != nil {
 			return err
 		}
@@ -142,12 +130,8 @@ func (u *uboot) Present() (bool, error) {
 	return osutil.FileExists(u.envFile()), nil
 }
 
-func (u *uboot) envFile() string {
-	return filepath.Join(u.dir(), u.ubootEnvFileName)
-}
-
 func (u *uboot) SetBootVars(values map[string]string) error {
-	env, err := ubootenv.OpenWithFlags(u.envFile(), ubootenv.OpenBestEffort)
+	env, err := u.openEnvWithFlags(u.envFile(), ubootenv.OpenBestEffort)
 	if err != nil {
 		return err
 	}
@@ -172,7 +156,7 @@ func (u *uboot) SetBootVars(values map[string]string) error {
 func (u *uboot) GetBootVars(names ...string) (map[string]string, error) {
 	out := map[string]string{}
 
-	env, err := ubootenv.OpenWithFlags(u.envFile(), ubootenv.OpenBestEffort)
+	env, err := u.openEnvWithFlags(u.envFile(), ubootenv.OpenBestEffort)
 	if err != nil {
 		return nil, err
 	}
@@ -195,11 +179,125 @@ func (u *uboot) ExtractRecoveryKernelAssets(recoverySystemDir string, s snap.Pla
 		return fmt.Errorf("internal error: recoverySystemDir unset")
 	}
 
-	recoverySystemUbootKernelAssetsDir := filepath.Join(u.rootdir, recoverySystemDir, "kernel")
+	recoverySystemUbootKernelAssetsDir := filepath.Join(u.rootDir(), recoverySystemDir, "kernel")
 	assets := []string{"kernel.img", "initrd.img", "dtbs/*"}
 	return extractKernelAssetsToBootDir(recoverySystemUbootKernelAssetsDir, snapf, assets)
 }
 
 func (u *uboot) RemoveKernelAssets(s snap.PlaceInfo) error {
 	return removeKernelAssetsFromBootDir(u.dir(), s)
+}
+
+type ubootCommon interface {
+	// Available by default if implementing struct embeds ubootBase
+	dir() string
+	rootDir() string
+	envFile() string
+
+	// These methods should be specialized
+	name() string
+	setDefaults()
+	processBlOpts(*Options)
+	createEnv(fname string, size int) (*ubootenv.Env, error)
+	openEnvWithFlags(fname string, flags ubootenv.OpenFlags) (*ubootenv.Env, error)
+}
+
+type ubootRedundEnv struct {
+	ubootBase
+}
+
+func (u *ubootRedundEnv) name() string {
+	return "uboot"
+}
+
+func (u *ubootRedundEnv) setDefaults() {
+	u.basedir = "/boot/uboot/"
+	u.ubootEnvFileName = "uboot.env"
+}
+
+func (u *ubootRedundEnv) processBlOpts(blOpts *Options) {
+	if blOpts != nil {
+		switch {
+		case blOpts.Role == RoleRecovery || blOpts.NoSlashBoot:
+			// RoleRecovery or NoSlashBoot imply we use
+			// the "boot.sel" simple text format file in
+			// /uboot/ubuntu as it exists on the partition
+			// directly
+			u.basedir = "/uboot/ubuntu/"
+			fallthrough
+		case blOpts.Role == RoleRunMode:
+			// if RoleRunMode (and no NoSlashBoot), we
+			// expect to find /boot/uboot/boot.sel
+			u.ubootEnvFileName = "boot.sel"
+		}
+	}
+}
+
+func (u *ubootRedundEnv) createEnv(fname string, size int) (*ubootenv.Env, error) {
+	return ubootenv.Create(fname, size)
+}
+
+func (u *ubootRedundEnv) openEnvWithFlags(fname string, flags ubootenv.OpenFlags) (*ubootenv.Env, error) {
+	return ubootenv.OpenWithFlags(fname, flags)
+}
+
+type ubootNoRedundEnv struct {
+	ubootBase
+}
+
+func (u *ubootNoRedundEnv) name() string {
+	return "uboot-nr"
+}
+
+func (u *ubootNoRedundEnv) setDefaults() {
+	u.basedir = "/boot/uboot-nr/"
+	u.ubootEnvFileName = "uboot.env"
+}
+
+func (u *ubootNoRedundEnv) processBlOpts(blOpts *Options) {
+	if blOpts != nil {
+		switch {
+		case blOpts.Role == RoleRecovery || blOpts.NoSlashBoot:
+			// RoleRecovery or NoSlashBoot imply we use
+			// the "boot.sel" simple text format file in
+			// /uboot/ubuntu as it exists on the partition
+			// directly
+			u.basedir = "/uboot-nr/ubuntu/"
+			fallthrough
+		case blOpts.Role == RoleRunMode:
+			// if RoleRunMode (and no NoSlashBoot), we
+			// expect to find /boot/uboot/boot.sel
+			u.ubootEnvFileName = "boot.sel"
+		}
+	}
+}
+
+func (u *ubootNoRedundEnv) createEnv(fname string, size int) (*ubootenv.Env, error) {
+	return ubootenv.CreateWithFlags(fname, size, ubootenv.OpenNoRedundEnv)
+}
+
+func (u *ubootNoRedundEnv) openEnvWithFlags(fname string, flags ubootenv.OpenFlags) (*ubootenv.Env, error) {
+	return ubootenv.OpenWithFlags(fname, flags|ubootenv.OpenNoRedundEnv)
+}
+
+type ubootBase struct {
+	rootdir string
+	basedir string
+
+	ubootEnvFileName string
+}
+
+func (u *ubootBase) dir() string {
+	if u.rootdir == "" {
+		panic("internal error: unset rootdir")
+	}
+	return filepath.Join(u.rootdir, u.basedir)
+}
+
+func (u *ubootBase) rootDir() string {
+	return u.rootdir
+}
+
+func (u *ubootBase) envFile() string {
+	return filepath.Join(u.dir(), u.ubootEnvFileName)
 }
