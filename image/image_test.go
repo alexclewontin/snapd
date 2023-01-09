@@ -3356,6 +3356,104 @@ func (s *imageSuite) TestSetupSeedCore20UBoot(c *C) {
 	c.Assert(env.Get("snapd_recovery_system"), Equals, expectedLabel)
 	c.Assert(env.Get("snapd_recovery_mode"), Equals, "install")
 	c.Assert(env.Get("snapd_boot_flags"), Equals, "factory")
+	c.Assert(env.HeaderFlagByte(), Equals, true)
+
+	// check recovery system specific config
+	systems, err := filepath.Glob(filepath.Join(seeddir, "systems", "*"))
+	c.Assert(err, IsNil)
+	c.Assert(systems, HasLen, 1)
+	c.Check(filepath.Base(systems[0]), Equals, expectedLabel)
+
+	// check we extracted the kernel assets
+	for _, fileAndContent := range kernelContent {
+		file := fileAndContent[0]
+		content := fileAndContent[1]
+		c.Assert(filepath.Join(systems[0], "kernel", file), testutil.FileEquals, content)
+	}
+}
+
+func (s *imageSuite) TestSetupSeedCore20UBootNoHeaderFlags(c *C) {
+	bootloader.Force(nil)
+	restore := image.MockTrusted(s.StoreSigning.Trusted)
+	defer restore()
+
+	// a model that uses core20 and our gadget
+	headers := map[string]interface{}{
+		"display-name": "my model",
+		"architecture": "arm64",
+		"base":         "core20",
+		"snaps": []interface{}{
+			map[string]interface{}{
+				"name":            "arm-kernel",
+				"id":              s.AssertedSnapID("arm-kernel"),
+				"type":            "kernel",
+				"default-channel": "20",
+			},
+			map[string]interface{}{
+				"name":            "uboot-gadget",
+				"id":              s.AssertedSnapID("uboot-gadget"),
+				"type":            "gadget",
+				"default-channel": "20",
+			},
+		},
+	}
+	model := s.Brands.Model("my-brand", "my-model", headers)
+
+	prepareDir := c.MkDir()
+
+	s.makeSnap(c, "snapd", nil, snap.R(1), "")
+	s.makeSnap(c, "core20", nil, snap.R(20), "")
+	kernelContent := [][]string{
+		{"kernel.img", "some kernel"},
+		{"initrd.img", "some initrd"},
+		{"dtbs/foo.dtb", "some dtb"},
+	}
+	s.makeSnap(c, "arm-kernel=20", kernelContent, snap.R(1), "")
+	gadgetContent := [][]string{
+		// this file must be empty
+		// TODO:UC20: write this test with non-empty uboot.env when we support
+		//            that
+		{"uboot.conf", ""},
+		{"meta/gadget.yaml", piUC20GadgetYaml},
+	}
+	s.makeSnap(c, "uboot-gadget=20", gadgetContent, snap.R(22), "")
+
+	opts := &image.Options{
+		PrepareDir: prepareDir,
+		Customizations: image.Customizations{
+			BootFlags: []string{"factory", "uboot-no-header-flags"},
+		},
+	}
+
+	err := image.SetupSeed(s.tsto, model, opts)
+	c.Assert(err, IsNil)
+
+	// validity checks
+	seeddir := filepath.Join(prepareDir, "system-seed")
+	seedsnapsdir := filepath.Join(seeddir, "snaps")
+	essSnaps, runSnaps, _ := s.loadSeed(c, seeddir)
+	c.Check(essSnaps, HasLen, 4)
+	c.Check(runSnaps, HasLen, 0)
+	l, err := ioutil.ReadDir(seedsnapsdir)
+	c.Assert(err, IsNil)
+	c.Check(l, HasLen, 4)
+
+	// check boot config
+
+	// uboot.env will be missing
+	ubootEnv := filepath.Join(prepareDir, "system-seed", "uboot.env")
+	c.Check(ubootEnv, testutil.FileAbsent)
+
+	// boot.sel will be present and have snapd_recovery_system set
+	expectedLabel := image.MakeLabel(time.Now())
+	bootSel := filepath.Join(prepareDir, "system-seed", "uboot", "ubuntu", "boot.sel")
+
+	env, err := ubootenv.Open(bootSel)
+	c.Assert(err, IsNil)
+	c.Assert(env.Get("snapd_recovery_system"), Equals, expectedLabel)
+	c.Assert(env.Get("snapd_recovery_mode"), Equals, "install")
+	c.Assert(env.Get("snapd_boot_flags"), Equals, "factory,uboot-no-header-flags")
+	c.Assert(env.HeaderFlagByte(), Equals, false)
 
 	// check recovery system specific config
 	systems, err := filepath.Glob(filepath.Join(seeddir, "systems", "*"))

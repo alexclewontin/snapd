@@ -1413,7 +1413,21 @@ func (m *DeviceManager) doInstallFinish(t *state.Task, _ *tomb.Tomb) error {
 		// as we will chainload to grub in the boot partition.
 		Role: bootloader.RoleRecovery,
 	}
-	if err := bootMakeBootablePartition(seedMntDir, opts, bootWith, boot.ModeRun, nil); err != nil {
+
+	deviceCtx, err := DeviceCtx(st, t, nil)
+	if err != nil {
+		return err
+	}
+
+	bootFlags := []string{}
+	if deviceCtx.HasModeenv() {
+		bootFlags, err = boot.BootFlags(deviceCtx)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := bootMakeBootablePartition(seedMntDir, opts, bootWith, boot.ModeRun, bootFlags); err != nil {
 		return err
 	}
 

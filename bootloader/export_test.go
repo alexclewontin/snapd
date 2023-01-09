@@ -64,6 +64,20 @@ func MockUbootFiles(c *C, rootdir string, blOpts *Options) {
 	c.Assert(err, IsNil)
 }
 
+func MockUbootFilesNoHeaderFlagsByte(c *C, rootdir string, blOpts *Options) {
+	u := &uboot{rootdir: rootdir}
+	u.setDefaults()
+	u.processBlOpts(blOpts)
+	err := os.MkdirAll(u.dir(), 0755)
+	c.Assert(err, IsNil)
+
+	// ensure that we have a valid uboot.env too
+	env, err := ubootenv.Create(u.envFile(), 4096, false)
+	c.Assert(err, IsNil)
+	err = env.Save()
+	c.Assert(err, IsNil)
+}
+
 func NewGrub(rootdir string, opts *Options) RecoveryAwareBootloader {
 	return newGrub(rootdir, opts).(RecoveryAwareBootloader)
 }

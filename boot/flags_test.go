@@ -255,9 +255,9 @@ func (s *bootFlagsSuite) TestInitramfsSetBootFlags(c *C) {
 		bootFlagsErrUnknown bool
 	}{
 		{
-			flags:       []string{"factory"},
-			expFlags:    []string{"factory"},
-			expFlagFile: "factory",
+			flags:       []string{"factory", "uboot-no-header-flags"},
+			expFlags:    []string{"factory", "uboot-no-header-flags"},
+			expFlagFile: "factory,uboot-no-header-flags",
 		},
 		{
 			flags:               []string{"factory", "unknown-new-flag"},
@@ -307,8 +307,8 @@ func (s *bootFlagsSuite) TestUserspaceBootFlagsUC20(c *C) {
 	}{
 		{
 			beforeFlags: []string{},
-			flags:       []string{"factory"},
-			expFlags:    []string{"factory"},
+			flags:       []string{"factory", "uboot-no-header-flags"},
+			expFlags:    []string{"factory", "uboot-no-header-flags"},
 		},
 		{
 			flags: []string{"factory", "new-unsupported-flag"},

@@ -42,6 +42,10 @@ var (
 		// the factory boot flag is set to indicate that this is a
 		// boot inside a factory environment
 		"factory",
+		// the uboot-no-header-flags boot flag is set to
+		// indicate that snapd should provide a boot.sel without
+		// the extra header byte
+		"uboot-no-header-flags",
 	}
 )
 

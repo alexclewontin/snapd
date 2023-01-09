@@ -221,7 +221,8 @@ func makeBootable20(rootdir string, bootWith *BootableSet, bootFlags []string) e
 	opts := &bootloader.Options{
 		PrepareImageTime: true,
 		// setup the recovery bootloader
-		Role: bootloader.RoleRecovery,
+		Role:      bootloader.RoleRecovery,
+		BootFlags: bootFlags,
 	}
 	if err := configureBootloader(rootdir, opts, bootWith, ModeInstall, bootFlags); err != nil {
 		return fmt.Errorf("cannot install bootloader: %v", err)
@@ -408,6 +409,8 @@ func makeRunnableSystem(model *asserts.Model, bootWith *BootableSet, sealer *Tru
 		ModelSignKeyID: model.SignKeyID(),
 	}
 
+	// TODO:UC20: when snapd starts managing the boot.sel file on ubuntu-boot
+	// directly, make sure that bootflags get passed in here somehow
 	// get the ubuntu-boot bootloader and extract the kernel there
 	opts := &bootloader.Options{
 		// Bootloader for run mode

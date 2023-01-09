@@ -76,6 +76,24 @@ func (s *ubootTestSuite) TestUbootGetEnvVar(c *C) {
 	})
 }
 
+func (s *ubootTestSuite) TestUbootGetEnvVarNoHeaderFlagsByte(c *C) {
+	bootloader.MockUbootFilesNoHeaderFlagsByte(c, s.rootdir, nil)
+	u := bootloader.NewUboot(s.rootdir, nil)
+	c.Assert(u, NotNil)
+	err := u.SetBootVars(map[string]string{
+		"snap_mode": "",
+		"snap_core": "4",
+	})
+	c.Assert(err, IsNil)
+
+	m, err := u.GetBootVars("snap_mode", "snap_core")
+	c.Assert(err, IsNil)
+	c.Assert(m, DeepEquals, map[string]string{
+		"snap_mode": "",
+		"snap_core": "4",
+	})
+}
+
 func (s *ubootTestSuite) TestGetBootloaderWithUboot(c *C) {
 	bootloader.MockUbootFiles(c, s.rootdir, nil)
 

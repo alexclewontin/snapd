@@ -27,6 +27,7 @@ import (
 	"github.com/snapcore/snapd/bootloader/ubootenv"
 	"github.com/snapcore/snapd/osutil"
 	"github.com/snapcore/snapd/snap"
+	"github.com/snapcore/snapd/strutil"
 )
 
 // uboot implements the required interfaces
@@ -111,8 +112,14 @@ func (u *uboot) InstallBootConfig(gadgetDir string, blOpts *Options) error {
 			return err
 		}
 
+		useHeaderFlagByte := true
+
+		if blOpts != nil {
+			useHeaderFlagByte = !strutil.ListContains(blOpts.BootFlags, "uboot-no-header-flags")
+		}
+
 		// TODO:UC20: what's a reasonable size for this file?
-		env, err := ubootenv.Create(u.envFile(), 4096, true)
+		env, err := ubootenv.Create(u.envFile(), 4096, useHeaderFlagByte)
 		if err != nil {
 			return err
 		}

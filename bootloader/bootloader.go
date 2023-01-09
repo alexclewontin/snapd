@@ -68,6 +68,10 @@ type Options struct {
 	// It is implied and ignored for RoleRecovery.
 	// It is an error to set it for RoleSole.
 	NoSlashBoot bool
+
+	// BootFlags holds the boot flags provided to the recovery bootloader at
+	// image build time
+	BootFlags []string
 }
 
 func (o *Options) validate() error {
