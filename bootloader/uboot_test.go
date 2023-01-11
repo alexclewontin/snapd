@@ -56,6 +56,21 @@ func (s *ubootTestSuite) TestNewUboot(c *C) {
 	present, err = u.Present()
 	c.Assert(err, IsNil)
 	c.Assert(present, Equals, true)
+
+	// no files means bl is not present, but we can still create the bl object
+	u = bootloader.NewUbootNoRedundEnv(s.rootdir, nil)
+	c.Assert(u, NotNil)
+	c.Assert(u.Name(), Equals, "uboot-nr")
+
+	present, err = u.Present()
+	c.Assert(err, IsNil)
+	c.Assert(present, Equals, false)
+
+	// now with files present, the bl is present
+	bootloader.MockUbootNoRedundEnvFiles(c, s.rootdir, nil)
+	present, err = u.Present()
+	c.Assert(err, IsNil)
+	c.Assert(present, Equals, true)
 }
 
 func (s *ubootTestSuite) TestUbootGetEnvVar(c *C) {
@@ -74,6 +89,22 @@ func (s *ubootTestSuite) TestUbootGetEnvVar(c *C) {
 		"snap_mode": "",
 		"snap_core": "4",
 	})
+
+	bootloader.MockUbootNoRedundEnvFiles(c, s.rootdir, nil)
+	u = bootloader.NewUbootNoRedundEnv(s.rootdir, nil)
+	c.Assert(u, NotNil)
+	err = u.SetBootVars(map[string]string{
+		"snap_mode": "",
+		"snap_core": "4",
+	})
+	c.Assert(err, IsNil)
+
+	m, err = u.GetBootVars("snap_mode", "snap_core")
+	c.Assert(err, IsNil)
+	c.Assert(m, DeepEquals, map[string]string{
+		"snap_mode": "",
+		"snap_core": "4",
+	})
 }
 
 func (s *ubootTestSuite) TestGetBootloaderWithUboot(c *C) {
@@ -82,6 +113,14 @@ func (s *ubootTestSuite) TestGetBootloaderWithUboot(c *C) {
 	bootloader, err := bootloader.Find(s.rootdir, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bootloader.Name(), Equals, "uboot")
+}
+
+func (s *ubootTestSuite) TestGetBootloaderWithUbootNoRedundEnv(c *C) {
+	bootloader.MockUbootNoRedundEnvFiles(c, s.rootdir, nil)
+
+	bootloader, err := bootloader.Find(s.rootdir, nil)
+	c.Assert(err, IsNil)
+	c.Assert(bootloader.Name(), Equals, "uboot-nr")
 }
 
 func (s *ubootTestSuite) TestUbootSetEnvNoUselessWrites(c *C) {
@@ -259,6 +298,50 @@ func (s *ubootTestSuite) TestUbootUC20OptsPlacement(c *C) {
 		dir := c.MkDir()
 		bootloader.MockUbootFiles(c, dir, t.blOpts)
 		u := bootloader.NewUboot(dir, t.blOpts)
+		c.Assert(u, NotNil, Commentf(t.comment))
+		c.Assert(bootloader.UbootConfigFile(u), Equals, filepath.Join(dir, t.expEnv), Commentf(t.comment))
+
+		// if we set boot vars on the uboot, we can open the config file and
+		// get the same variables
+		c.Assert(u.SetBootVars(map[string]string{"hello": "there"}), IsNil)
+		env, err := ubootenv.Open(filepath.Join(dir, t.expEnv))
+		c.Assert(err, IsNil)
+		c.Assert(env.Get("hello"), Equals, "there")
+	}
+}
+
+func (s *ubootTestSuite) TestUbootNoRedundEnvUC20OptsPlacement(c *C) {
+	tt := []struct {
+		blOpts  *bootloader.Options
+		expEnv  string
+		comment string
+	}{
+		{
+			nil,
+			"/boot/uboot-nr/uboot.env",
+			"traditional uboot.env",
+		},
+		{
+			&bootloader.Options{Role: bootloader.RoleRunMode, NoSlashBoot: true},
+			"/uboot-nr/ubuntu/boot.sel",
+			"uc20 install mode boot.sel",
+		},
+		{
+			&bootloader.Options{Role: bootloader.RoleRunMode},
+			"/boot/uboot-nr/boot.sel",
+			"uc20 run mode boot.sel",
+		},
+		{
+			&bootloader.Options{Role: bootloader.RoleRecovery},
+			"/uboot-nr/ubuntu/boot.sel",
+			"uc20 recovery boot.sel",
+		},
+	}
+
+	for _, t := range tt {
+		dir := c.MkDir()
+		bootloader.MockUbootNoRedundEnvFiles(c, dir, t.blOpts)
+		u := bootloader.NewUbootNoRedundEnv(dir, t.blOpts)
 		c.Assert(u, NotNil, Commentf(t.comment))
 		c.Assert(bootloader.UbootConfigFile(u), Equals, filepath.Join(dir, t.expEnv), Commentf(t.comment))
 

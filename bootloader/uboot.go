@@ -1,7 +1,7 @@
 // -*- Mode: Go; indent-tabs-mode: t -*-
 
 /*
- * Copyright (C) 2014-2022 Canonical Ltd
+ * Copyright (C) 2014-2023 Canonical Ltd
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -34,6 +34,7 @@ var (
 	_ Bootloader                             = (*uboot)(nil)
 	_ ExtractedRecoveryKernelImageBootloader = (*uboot)(nil)
 	_ ubootCommon                            = (*ubootRedundEnv)(nil)
+	_ ubootCommon                            = (*ubootNoRedundEnv)(nil)
 )
 
 type uboot struct {
@@ -55,10 +56,14 @@ func newUboot(rootdir string, blOpts *Options) Bootloader {
 	return u
 }
 
-// newUboot create a new Uboot bootloader object
-func newUboot(rootdir string, blOpts *Options) Bootloader {
+// newUbootNoRedundEnv creates a new Uboot bootloader object
+func newUbootNoRedundEnv(rootdir string, blOpts *Options) Bootloader {
 	u := &uboot{
-		rootdir: rootdir,
+		&ubootNoRedundEnv{
+			ubootBase{
+				rootdir: rootdir,
+			},
+		},
 	}
 	u.setDefaults()
 	u.processBlOpts(blOpts)
@@ -229,6 +234,41 @@ func (u *ubootRedundEnv) processBlOpts(blOpts *Options) {
 
 func (u *ubootRedundEnv) createEnv(fname string, size int) (*ubootenv.Env, error) {
 	return ubootenv.Create(fname, size, true)
+}
+
+type ubootNoRedundEnv struct {
+	ubootBase
+}
+
+func (u *ubootNoRedundEnv) name() string {
+	return "uboot-nr"
+}
+
+func (u *ubootNoRedundEnv) setDefaults() {
+	u.basedir = "/boot/uboot-nr/"
+	u.ubootEnvFileName = "uboot.env"
+}
+
+func (u *ubootNoRedundEnv) processBlOpts(blOpts *Options) {
+	if blOpts != nil {
+		switch {
+		case blOpts.Role == RoleRecovery || blOpts.NoSlashBoot:
+			// RoleRecovery or NoSlashBoot imply we use
+			// the "boot.sel" simple text format file in
+			// /uboot/ubuntu as it exists on the partition
+			// directly
+			u.basedir = "/uboot-nr/ubuntu/"
+			fallthrough
+		case blOpts.Role == RoleRunMode:
+			// if RoleRunMode (and no NoSlashBoot), we
+			// expect to find /boot/uboot/boot.sel
+			u.ubootEnvFileName = "boot.sel"
+		}
+	}
+}
+
+func (u *ubootNoRedundEnv) createEnv(fname string, size int) (*ubootenv.Env, error) {
+	return ubootenv.Create(fname, size, false)
 }
 
 type ubootBase struct {
