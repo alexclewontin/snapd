@@ -51,14 +51,12 @@ func NewUboot(rootdir string, blOpts *Options) ExtractedRecoveryKernelImageBootl
 }
 
 func MockUbootFiles(c *C, rootdir string, blOpts *Options) {
-	u := &uboot{rootdir: rootdir}
-	u.setDefaults()
-	u.processBlOpts(blOpts)
+	u := newUboot(rootdir, blOpts).(*uboot)
 	err := os.MkdirAll(u.dir(), 0755)
 	c.Assert(err, IsNil)
 
 	// ensure that we have a valid uboot.env too
-	env, err := ubootenv.Create(u.envFile(), 4096, true)
+	env, err := u.createEnv(u.envFile(), 4096)
 	c.Assert(err, IsNil)
 	err = env.Save()
 	c.Assert(err, IsNil)
