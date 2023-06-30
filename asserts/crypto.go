@@ -37,7 +37,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/openpgp/packet"
-	"golang.org/x/crypto/sha3"
+	"github.com/snapcore/snapd/internal/sha3"
 )
 
 const (

@@ -23,7 +23,7 @@ import (
 	"encoding/base64"
 
 	"golang.org/x/crypto/openpgp/packet"
-	"golang.org/x/crypto/sha3"
+	"github.com/snapcore/snapd/internal/sha3"
 
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
