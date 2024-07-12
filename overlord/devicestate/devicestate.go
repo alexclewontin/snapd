@@ -1171,6 +1171,11 @@ func remodelTasks(ctx context.Context, st *state.State, current, new *asserts.Mo
 		recoverySetupTaskID = createRecoveryTasks.Tasks()[0].ID()
 	}
 
+	// Ensure correct restart boundaries are set on the new task-set.
+	if err := snapstate.SetEssentialSnapsRestartBoundariesAllowSingleReboot(st, deviceCtx, tss); err != nil {
+		return nil, err
+	}
+
 	// Set the new model assertion - this *must* be the last thing done
 	// by the change.
 	setModel := st.NewTask("set-model", i18n.G("Set new model assertion"))
@@ -1184,10 +1189,6 @@ func remodelTasks(ctx context.Context, st *state.State, current, new *asserts.Mo
 	}
 	tss = append(tss, state.NewTaskSet(setModel))
 
-	// Ensure correct restart boundaries are set on the new task-set.
-	if err := snapstate.SetEssentialSnapsRestartBoundariesAllowSingleReboot(st, deviceCtx, tss); err != nil {
-		return nil, err
-	}
 	return tss, nil
 }
 
