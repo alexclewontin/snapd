@@ -525,3 +525,7 @@ func SetEssentialSnapsRestartBoundaries(st *state.State, providedDeviceCtx Devic
 	}
 	return nil
 }
+
+func SetEssentialSnapsRestartBoundariesAllowSingleReboot(st *state.State, providedDeviceContext DeviceContext, tss []*state.TaskSet) error {
+	return arrangeSnapTaskSetsLinkageAndRestart(st, providedDeviceContext, tss)
+}

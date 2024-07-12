@@ -1185,7 +1185,7 @@ func remodelTasks(ctx context.Context, st *state.State, current, new *asserts.Mo
 	tss = append(tss, state.NewTaskSet(setModel))
 
 	// Ensure correct restart boundaries are set on the new task-set.
-	if err := snapstate.SetEssentialSnapsRestartBoundaries(st, deviceCtx, tss); err != nil {
+	if err := snapstate.SetEssentialSnapsRestartBoundariesAllowSingleReboot(st, deviceCtx, tss); err != nil {
 		return nil, err
 	}
 	return tss, nil
